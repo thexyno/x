@@ -136,7 +136,6 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Printf("config: %v\n", config)
 	c, err := mailConnection(config.IMAPHost, config.Login.Username, config.Login.Password)
 	if err != nil {
 		log.Panic(err)
