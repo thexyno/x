@@ -20,23 +20,71 @@
       # Nixpkgs instantiated for supported system types.
       nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
 
-    in {
+    in
+    {
 
-      packages = forAllSystems(system:
-        let pkgs = nixpkgsFor.${system}; in {
-
-              mailmover = pkgs.buildGoModule {
-                inherit version;
-                src = ./mailmover;
-                vendorSha256 = pkgs.lib.fakeSha256;
+      nixosModule = { config, options, lib, pkgs, ... }:
+        let
+          pk = self.packages.${pkgs.system};
+        in
+        with lib;
+        {
+          options.services.mailmover = {
+            enable = mkEnableOption "Enables xynos mailmover service";
+            schedule = mkOption {
+              type = types.str;
+              default = "*-*-* *:*:10";
+            };
+            configFile = mkOption {
+              type = types.str;
+              default = "/etc/mailmover.dhall";
+            };
+          };
+          config = mkIf config.services.mailmover.enable {
+            systemd.timers.mailmover = {
+              wantedBy = [ "multi-user.target" ];
+              description = "xynos mailmover service";
+              timerConfig.OnCalendar = config.services.mailmover.schedule;
+            };
+            systemd.services.mailmover = {
+              description = "xynos mailmover service";
+              after = [ "network.target" ];
+              wantedBy = [ "multi-user.target" ];
+              serviceConfig = {
+                DynamicUser = true;
+                PrivateTmp = "true";
+                PrivateDevices = "true";
+                ProtectHome = "true";
+                ProtectSystem = "strict";
+                LoadCredential = "dhall:${config.services.mailmover.configFile}";
               };
-            }
+              script = ''
+                export HOME=/tmp
+                exec ${pk.mailmover}/bin/mailmover ''${CREDENTIALS_DIRECTORY}/dhall
+              '';
+            };
+
+          };
+        };
+
+      packages = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in
+        {
+          mailmover = pkgs.buildGo118Module {
+            pname = "mailmover";
+            inherit version;
+            src = ./mailmover;
+            vendorSha256 = "sha256-0K/hgFbbstZI/I8cHCFy8Pn+fnT5bf8w+VfbxKT4DGo=";
+          };
+        }
       );
 
-      devShell = forAllSystems (system: let pkgs = nixpkgsFor.${system}; in pkgs.mkShell {
-        buildInputs = [ pkgs.go_1_18 pkgs.nixpkgs-fmt pkgs.lefthook pkgs.gopls ];
-      }
+      devShell = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in
+        pkgs.mkShell {
+          buildInputs = [ pkgs.go_1_18 pkgs.nixpkgs-fmt pkgs.lefthook pkgs.gopls ];
+        }
       );
 
-  };
+    };
 }
