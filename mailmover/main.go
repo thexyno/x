@@ -23,16 +23,17 @@ type Config struct {
 	Mailbox      string
 	TrashMailbox string
 	From         string
-	FromName         string
+	FromName     string
 	Login        struct {
 		Username string
 		Password string
 	}
-	Rules [](struct {
+	Rules []struct {
 		From        string
 		To          string
 		RewriteFrom bool
-	})
+	}
+	IgnoreFetchErrors bool
 }
 
 func readConfig(path string) (Config, error) {
@@ -57,10 +58,10 @@ func mailConnection(host, username, password string) (*client.Client, error) {
 	return c, nil
 }
 
-func sendMail(config Config, from, subject, to,contenttype string, body []byte) error {
+func sendMail(config Config, from, subject, to, contenttype string, body []byte) error {
 	auth := sasl.NewPlainClient("", config.Login.Username, config.Login.Password)
 	msg := bytes.NewBufferString(
-			"From: " + from + "\r\n" +
+		"From: " + from + "\r\n" +
 			"To: " + to + "\r\n" +
 			"Subject: " + subject + "\r\n" +
 			"Content-Type: " + contenttype + "\r\n" +
@@ -110,7 +111,7 @@ func manageMessage(msg *imap.Message, c *client.Client, config Config) error {
 
 					}
 				}
-				fromToUse := fmt.Sprint(config.FromName, " <",config.From,">")
+				fromToUse := fmt.Sprint(config.FromName, " <", config.From, ">")
 				if !rule.RewriteFrom {
 					fromToUse = addr.Address()
 				}
@@ -173,15 +174,20 @@ func main() {
 	}()
 	for message := range messages {
 		log.Println("Managing Message: ", message.SeqNum)
-		err := manageMessage(message, c, config); if err != nil {
-		log.Panic(err)
+		err := manageMessage(message, c, config)
+		if err != nil {
+			log.Panic(err)
 		}
 	}
 
 	if err := <-done; err != nil {
-		log.Panic(err)
+		if config.IgnoreFetchErrors {
+			log.Println("WARNING: Ignoring Fetch Error")
+			log.Println(err)
+		} else {
+			log.Panic(err)
+		}
 	}
 
 	log.Println("Done!")
-
 }
